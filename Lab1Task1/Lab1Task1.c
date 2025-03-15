@@ -16,6 +16,8 @@ enum errors {
     ERROR_INVALID_PIN = -4,
     ERROR_INVALID_FLAG = -5,
     ERROR_TIME_PARSING = -6,
+    ERROR_INPUT_CHOICE = -7,
+    ERROR_TRASH_IN_LOGIN = -8,
 };
 
 typedef struct {
@@ -37,6 +39,19 @@ int find_user(const char *login) {
     return ERROR_NO_USER;
 }
 
+int is_trash(char symbol) {
+    if ((symbol >= '0') && (symbol <= '9')) {
+        return 0;
+    }
+    else if ((symbol >= 'a') && (symbol <= 'z')) {
+        return 0;
+    }
+    else if ((symbol >= 'A') && (symbol <= 'Z')) {
+        return 0;
+    }
+    return 1;
+}
+
 int register_user() {
     if (user_count >= MAX_USERS) {
         printf("User limit reached. Cannot register more users.\n");
@@ -51,6 +66,13 @@ int register_user() {
     if (find_user(login) != -1) {
         printf("User already exists.\n");
         return ERROR_USER_ALREADY_EXIST;
+    }
+    int len = strlen(login);
+    for (int i = 0; i < len; i++) {
+        if (is_trash(login[i])) {
+            printf("In login must be only digits and liters");
+            return ERROR_TRASH_IN_LOGIN;
+        }
     }
 
     printf("Enter PIN (0 to 100000): ");
@@ -165,17 +187,22 @@ void apply_sanctions(User* user, const char *username, int limit) {
 }
 
 int main() {
-    while (1) {
+    int flagExit = 0;
+    while (!flagExit) {
         printf("Welcome to the shell. Please log in or register.\n");
         
         int choice;
         printf("1. Register\n2. Login\n3. Exit\n");
-        scanf("%d", &choice);
+        if (scanf("%d", &choice) != 1) {
+            printf("Input must be a number\n");
+            return ERROR_INPUT_CHOICE;
+        } 
 
         int flagLogin = 0;
 
         if (choice == 1) {
-            register_user();
+            int code = register_user();
+            if (code != 0) return code;
             continue;
         } else if (choice == 2) {
             int user_index = login_user();
@@ -232,6 +259,7 @@ int main() {
                 }
             }
         } else if (choice == 3) {
+            flagExit = 1;
             break;
         } else {
             printf("Invalid choice.\n");
