@@ -241,6 +241,7 @@ int main() {
                     int limit;
                     sscanf(command + 10, "%6s %d", username, &limit);
                     apply_sanctions(current_user, username, limit);
+                    flagLogin = 1;
                 } else {
                     if (flagLogin == 0) {
                         printf("Unknown command.\n");
