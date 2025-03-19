@@ -7,18 +7,22 @@
 #include <pwd.h>
 #include <grp.h>
 
-void list_files(const char *dirpath) {
+enum errors {
+    SUCCESS = 0,
+    ERROR_OPEN_DIR = 1,
+};
+
+int list_files(const char *dirpath) {
     DIR *dir;
     struct dirent *entry;
     struct stat file_stat;
 
     if ((dir = opendir(dirpath)) == NULL) {
-        perror("opendir");
-        return;
+        return ERROR_OPEN_DIR;
     }
 
     while ((entry = readdir(dir)) != NULL) {
-        char filepath[1024];
+        char filepath[4096];
         snprintf(filepath, sizeof(filepath), "%s/%s", dirpath, entry->d_name);
 
         if (stat(filepath, &file_stat) == -1) {
@@ -55,6 +59,7 @@ void list_files(const char *dirpath) {
     }
 
     closedir(dir);
+    return SUCCESS;
 }
 
 int main(int argc, char *argv[]) {
@@ -65,8 +70,11 @@ int main(int argc, char *argv[]) {
 
     for (int i = 1; i < argc; i++) {
         printf("Listing files in directory: %s\n", argv[i]);
-        list_files(argv[i]);
+        if (list_files(argv[i])) {
+            printf("error while opening dir");
+        }
+
     }
 
-    return 0;
+    return SUCCESS;
 }
