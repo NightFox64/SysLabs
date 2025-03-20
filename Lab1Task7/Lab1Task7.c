@@ -6,6 +6,7 @@
 #include <time.h>
 #include <pwd.h>
 #include <grp.h>
+#include <linux/limits.h>
 
 enum errors {
     SUCCESS = 0,
@@ -22,7 +23,7 @@ int list_files(const char *dirpath) {
     }
 
     while ((entry = readdir(dir)) != NULL) {
-        char filepath[4096];
+        char filepath[PATH_MAX];
         snprintf(filepath, sizeof(filepath), "%s/%s", dirpath, entry->d_name);
 
         if (stat(filepath, &file_stat) == -1) {
@@ -73,7 +74,7 @@ int main(int argc, char *argv[]) {
         if (list_files(argv[i])) {
             printf("error while opening dir");
         }
-
+        printf("\n");
     }
 
     return SUCCESS;
