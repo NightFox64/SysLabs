@@ -7,38 +7,71 @@
 #include <sys/wait.h>
 #include <stdint.h>
 #include <errno.h>
+#include <math.h>
+#include <linux/limits.h>
 
-#define BLOCK_SIZE 1024
+//#define BUFSIZ 1024
 
-// Функция для выполнения операции xorN
-void xorN(const char *filename, int n) {
-    FILE *file = fopen(filename, "rb");
-    if (!file) {
-        perror("Failed to open file");
-        return;
+enum errors {
+    SUCCESS = 0,
+    ERROR_OPEN_FILE = -1,
+    ERROR_MALLOC = -2,
+    ERROR_FORK = -3,
+    ERROR_EMPTY_SEARCH_STRING = -4,
+    ERROR_USAGE = -5,
+
+};
+
+int xorN(const char* filename, int N) {
+    FILE* file = fopen(filename, "rb");
+    if (file == NULL) {
+        return ERROR_OPEN_FILE;
     }
 
-    uint8_t buffer[BLOCK_SIZE];
-    uint8_t xor_result = 0;
-    size_t bytes_read;
+    size_t block_size = (1 << N) / 8;
+    if ((1 << N) % 8 != 0) {
+        block_size += 1;
+    }
 
-    while ((bytes_read = fread(buffer, 1, BLOCK_SIZE, file)) > 0) {
-        for (size_t i = 0; i < bytes_read; i++) {
-            xor_result ^= buffer[i];
+    uint8_t* block = (uint8_t*)calloc(block_size, sizeof(uint8_t));
+    if (block == NULL) {
+        fclose(file);
+        return ERROR_MALLOC;
+    }
+    uint8_t* result = (uint8_t*)calloc(block_size, sizeof(uint8_t));
+    if (result == NULL) {
+        fclose(file);
+        free(block);
+        return ERROR_MALLOC;
+    }
+
+    size_t bytes_read;
+    while ((bytes_read = fread(block, sizeof(uint8_t), block_size, file)) > 0) {
+        if (bytes_read < block_size) {
+            memset(block + bytes_read, 0, block_size - bytes_read);
+        }
+        
+        for (size_t i = 0; i < block_size; i++) {
+            result[i] ^= block[i];
         }
     }
 
-    fclose(file);
+    printf("XOR result for file '%s' with N=%d:\n", filename, N);
+    for (size_t i = 0; i < block_size; i++) {
+        printf("%x ", result[i]);
+    }
+    printf("\n");
 
-    printf("XOR result for %s (N=%d): %02x\n", filename, n, xor_result);
+    free(block);
+    free(result);
+    fclose(file);
+    return SUCCESS;
 }
 
-// Функция для выполнения операции mask
-void mask(const char *filename, uint32_t mask_value) {
+int mask(const char *filename, uint32_t mask_value) {
     FILE *file = fopen(filename, "rb");
     if (!file) {
-        perror("Failed to open file");
-        return;
+        return ERROR_OPEN_FILE;
     }
 
     uint32_t value;
@@ -53,33 +86,31 @@ void mask(const char *filename, uint32_t mask_value) {
     fclose(file);
 
     printf("Mask count for %s: %zu\n", filename, count);
+    return SUCCESS;
 }
 
-// Функция для выполнения операции copyN
-void copyN(const char *filename, int n) {
+int copyN(const char *filename, int n) {
     for (int i = 1; i <= n; i++) {
         pid_t pid = fork();
         if (pid == 0) {
-            char new_filename[256];
+            char new_filename[PATH_MAX];
             snprintf(new_filename, sizeof(new_filename), "%s_%d", filename, i);
 
             FILE *src_file = fopen(filename, "rb");
             if (!src_file) {
-                perror("Failed to open source file");
                 exit(EXIT_FAILURE);
             }
 
             FILE *dst_file = fopen(new_filename, "wb");
             if (!dst_file) {
-                perror("Failed to open destination file");
                 fclose(src_file);
                 exit(EXIT_FAILURE);
             }
 
-            uint8_t buffer[BLOCK_SIZE];
+            uint8_t buffer[BUFSIZ];
             size_t bytes_read;
 
-            while ((bytes_read = fread(buffer, 1, BLOCK_SIZE, src_file))) {
+            while ((bytes_read = fread(buffer, 1, BUFSIZ, src_file))) {
                 fwrite(buffer, 1, bytes_read, dst_file);
             }
 
@@ -88,47 +119,89 @@ void copyN(const char *filename, int n) {
 
             exit(EXIT_SUCCESS);
         } else if (pid < 0) {
-            perror("Failed to fork");
-            return;
+            return ERROR_FORK;
         }
     }
 
     for (int i = 0; i < n; i++) {
         wait(NULL);
     }
+
+    return SUCCESS;
 }
 
-// Функция для выполнения операции find
-void find(const char *filename, const char *search_string) {
+// int find(const char *filename, const char *search_string) {
+//     FILE *file = fopen(filename, "r");
+//     if (file == NULL) {
+//         return -1;
+//     }
+
+//     int search_len = strlen(search_string);
+//     int match_pos = 0;
+//     int c;
+
+//     while ((c = fgetc(file)) != EOF) {
+//         if (c == search_string[match_pos]) {
+//             match_pos++;
+//             if (match_pos == search_len) {
+//                 fclose(file);
+//                 return 1;
+//             }
+//         } else {
+//             match_pos = 0;
+//         }
+//     }
+
+//     fclose(file);
+
+//     return 0;
+// }
+
+int find(const char *filename, const char *search_string) {
     FILE *file = fopen(filename, "r");
-    if (!file) {
-        perror("Failed to open file");
-        return;
+    if (file == NULL) {
+        return -1;
     }
 
-    char line[BLOCK_SIZE];
-    int found = 0;
+    int search_len = strlen(search_string);
+    if (search_len == 0) {
+        fclose(file);
+        return 0;
+    }
 
-    while (fgets(line, sizeof(line), file)) {
-        if (strstr(line, search_string)) {
-            found = 1;
-            break;
+    long file_size;
+    fseek(file, 0, SEEK_END);
+    file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    for (long i = 0; i <= file_size - search_len; i++) {
+        int match = 1;
+        
+        for (int j = 0; j < search_len; j++) {
+            char c;
+            fseek(file, i + j, SEEK_SET);
+            c = fgetc(file);
+            
+            if (c != search_string[j]) {
+                match = 0;
+                break;
+            }
+        }
+        
+        if (match) {
+            fclose(file);
+            return 1;
         }
     }
 
     fclose(file);
-
-    if (found) {
-        printf("String found in %s\n", filename);
-    } else {
-        printf("String not found in %s\n", filename);
-    }
+    return 0;
 }
 
 int main(int argc, char *argv[]) {
     if (argc < 3) {
-        fprintf(stderr, "Usage: %s <file1> <file2> ... <flag> [args]\n", argv[0]);
-        return EXIT_FAILURE;
+        printf("Usage: %s <file1> <file2> ... <flag> [args]\n", argv[0]);
+        return ERROR_USAGE;
     }
 
     char *flag = argv[argc - 1];
@@ -137,8 +210,8 @@ int main(int argc, char *argv[]) {
     if (strncmp(flag, "xor", 3) == 0) {
         int n = atoi(flag + 3);
         if (n < 2 || n > 6) {
-            fprintf(stderr, "Invalid N value for xorN\n");
-            return EXIT_FAILURE;
+            printf("Invalid N value for xorN\n");
+            return ERROR_USAGE;
         }
 
         for (int i = 1; i <= file_count; i++) {
@@ -146,8 +219,8 @@ int main(int argc, char *argv[]) {
         }
     } else if (strncmp(flag, "mask", 4) == 0) {
         if (argc < 4) {
-            fprintf(stderr, "Usage: %s <file1> <file2> ... mask <hex>\n", argv[0]);
-            return EXIT_FAILURE;
+            printf("Usage: %s <file1> <file2> ... mask <hex>\n", argv[0]);
+            return ERROR_USAGE;
         }
 
         uint32_t mask_value = strtoul(argv[argc - 1], NULL, 16);
@@ -158,8 +231,8 @@ int main(int argc, char *argv[]) {
     } else if (strncmp(flag, "copy", 4) == 0) {
         int n = atoi(flag + 4);
         if (n <= 0) {
-            fprintf(stderr, "Invalid N value for copyN\n");
-            return EXIT_FAILURE;
+            printf("Invalid N value for copyN\n");
+            return ERROR_USAGE;
         }
 
         for (int i = 1; i <= file_count; i++) {
@@ -167,20 +240,24 @@ int main(int argc, char *argv[]) {
         }
     } else if (strncmp(flag, "find", 4) == 0) {
         if (argc < 4) {
-            fprintf(stderr, "Usage: %s <file1> <file2> ... find <string>\n", argv[0]);
-            return EXIT_FAILURE;
+            printf("Usage: %s <file1> <file2> ... find <string>\n", argv[0]);
+            return ERROR_USAGE;
         }
 
-        char *search_string = argv[argc - 1];
+        char *search_string = argv[argc - 2];
 
-        for (int i = 1; i <= file_count; i++) {
+        for (int i = 1; i < file_count; i++) {
             pid_t pid = fork();
             if (pid == 0) {
-                find(argv[i], search_string);
+                if (find(argv[i], search_string)) {
+                    printf("Found string in: %s\n", argv[i]);
+                } else {
+                    printf("Did not find string in: %s\n", argv[i]);
+                }
                 exit(EXIT_SUCCESS);
             } else if (pid < 0) {
-                perror("Failed to fork");
-                return EXIT_FAILURE;
+                printf("Failed to fork");
+                return ERROR_FORK;
             }
         }
 
@@ -188,9 +265,9 @@ int main(int argc, char *argv[]) {
             wait(NULL);
         }
     } else {
-        fprintf(stderr, "Unknown flag: %s\n", flag);
-        return EXIT_FAILURE;
+        printf("Unknown flag: %s\n", flag);
+        return ERROR_USAGE;
     }
 
-    return EXIT_SUCCESS;
+    return SUCCESS;
 }

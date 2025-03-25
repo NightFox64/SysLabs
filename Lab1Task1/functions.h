@@ -3,7 +3,7 @@
 #include <string.h>
 #include <time.h>
 
-#define MAX_USERS 100
+#define MAX_USERS 1000
 #define MAX_LOGIN_LEN 7
 #define MAX_PIN_LEN 6
 #define MAX_COMMAND_LEN 100
