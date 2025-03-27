@@ -5,9 +5,11 @@
 #include <sys/msg.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <time.h>
+#include <signal.h>
+#include <fcntl.h>
 
 #define MAX_MSG_SIZE 256
+#define PERMS 0644
 
 typedef struct {
     long mtype;
@@ -15,56 +17,64 @@ typedef struct {
     int client_id;
 } Message;
 
-key_t server_key;
-int server_msqid;
+int msgqid;
 int client_id;
 
-void generate_client_id() {
-    srand(time(NULL) ^ getpid());
-    client_id = rand() % 1000 + 1;
-}
-
-void connect_to_server() {
-    server_key = ftok("server.c", 'A');
-    if (server_key == -1) {
-        perror("ftok");
-        exit(1);
-    }
-    
-    server_msqid = msgget(server_key, 0666);
-    if (server_msqid == -1) {
-        perror("msgget");
-        exit(1);
-    }
-    
-    printf("Connected to server with ID: %d\n", client_id);
+void handle_signal(int sig) {
+    printf("\nClient shutting down...\n");
+    exit(0);
 }
 
 void send_command(const char* command) {
     Message msg;
-    msg.mtype = 1;
+    msg.mtype = 1; // Server message type
+    strncpy(msg.mtext, command, MAX_MSG_SIZE);
     msg.client_id = client_id;
-    snprintf(msg.mtext, MAX_MSG_SIZE, "%s", command);
     
-    if (msgsnd(server_msqid, &msg, sizeof(msg.mtext), 0) == -1) {
+    if (msgsnd(msgqid, &msg, sizeof(msg.mtext) + sizeof(int), 0) == -1) {
         perror("msgsnd");
         exit(1);
     }
     
-    printf("Sent command: %s\n", command);
-}
-
-void receive_response() {
-    Message msg;
-    if (msgrcv(server_msqid, &msg, sizeof(msg.mtext), client_id, 0) == -1) {
+    Message reply;
+    if (msgrcv(msgqid, &reply, sizeof(reply.mtext) + sizeof(int), client_id, 0) == -1) {
         perror("msgrcv");
         exit(1);
     }
     
-    printf("Server response: %s\n", msg.mtext);
+    printf("Server reply: %s\n", reply.mtext);
+    if (strcmp(reply.mtext, "game_over") == 0) {
+        exit(0);
+    }
 }
 
-void process_commands_from_file(const char* filename) {
+void register_client() {
+    Message msg;
+    msg.mtype = 1;
+    strcpy(msg.mtext, "register");
+    msg.client_id = getpid();
+    
+    if (msgsnd(msgqid, &msg, sizeof(msg.mtext) + sizeof(int), 0) == -1) {
+        perror("msgsnd");
+        exit(1);
+    }
+    
+    Message reply;
+    if (msgrcv(msgqid, &reply, sizeof(reply.mtext) + sizeof(int), getpid(), 0) == -1) {
+        perror("msgrcv");
+        exit(1);
+    }
+    
+    if (strcmp(reply.mtext, "registered") == 0) {
+        client_id = getpid();
+        printf("Registered with id %d\n", client_id);
+    } else {
+        printf("Registration failed\n");
+        exit(1);
+    }
+}
+
+void process_file(const char* filename) {
     FILE* file = fopen(filename, "r");
     if (!file) {
         perror("fopen");
@@ -73,27 +83,42 @@ void process_commands_from_file(const char* filename) {
     
     char line[MAX_MSG_SIZE];
     while (fgets(line, sizeof(line), file)) {
+        // Remove newline character
         line[strcspn(line, "\n")] = '\0';
         
-        if (strlen(line) > 0) {
-            send_command(line);
-            receive_response();
-            sleep(1);
-        }
+        if (strlen(line) == 0) continue;
+        
+        printf("Sending command: %s\n", line);
+        send_command(line);
+        sleep(1); // Small delay between commands
     }
     
     fclose(file);
 }
 
 int main(int argc, char* argv[]) {
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
+    
     if (argc != 2) {
-        printf("Usage: %s <commands_file>\n", argv[0]);
-        return 1;
+        fprintf(stderr, "Usage: %s <command_file>\n", argv[0]);
+        exit(1);
     }
     
-    generate_client_id();
-    connect_to_server();
-    process_commands_from_file(argv[1]);
+    key_t key = ftok("server.c", 'A');
+    if (key == -1) {
+        perror("ftok");
+        exit(1);
+    }
+    
+    msgqid = msgget(key, PERMS);
+    if (msgqid == -1) {
+        perror("msgget");
+        exit(1);
+    }
+    
+    register_client();
+    process_file(argv[1]);
     
     return 0;
 }

@@ -10,24 +10,17 @@
 
 #define MAX_MSG_SIZE 256
 #define MAX_CLIENTS 10
+#define PERMS 0644
 
-enum errors {
-    SUCCESS = 0,
-    ERROR_BAD_SITUATION = 1,
-    ERROR_GAME_OVER = -2,
-    ERROR_UNDEFINED_OBJECT = -3,
-    ERROR_FULL_BOAT = -4,
-    ERROR_WRONG_SHORE = -5,
-    ERROR_NOTHING_TO_PUT = -6,
-    ERROR_INVALID_COMMAND = -7,
-};
+typedef enum { WOLF, GOAT, CABBAGE, NONE } Object;
 
-typedef enum { 
-    WOLF, 
-    GOAT, 
-    CABBAGE, 
-    NONE 
-} Object;
+typedef struct {
+    Object left_shore[3];  // wolf, goat, cabbage
+    Object right_shore[3];
+    Object boat;
+    int boat_position; // 0 - left, 1 - right
+    int game_over;
+} GameState;
 
 typedef struct {
     long mtype;
@@ -38,22 +31,11 @@ typedef struct {
 typedef struct {
     int client_id;
     pid_t pid;
-    time_t last_active;
+    int active;
 } ClientInfo;
 
-typedef struct {
-    Object left_shore[3];  // wolf, goat, cabbage
-    Object right_shore[3];
-    Object boat;
-    int boat_position; // 0 - left, 1 - right
-    int game_over;
-    int success;
-} GameState;
-
-key_t server_key;
-int server_msqid;
+int msgqid;
 ClientInfo clients[MAX_CLIENTS];
-int num_clients = 0;
 GameState game_state;
 
 void initialize_game() {
@@ -66,187 +48,249 @@ void initialize_game() {
     game_state.boat = NONE;
     game_state.boat_position = 0;
     game_state.game_over = 0;
-    game_state.success = 0;
 }
 
-int check_victory() {
-    return game_state.right_shore[0] == WOLF && 
-           game_state.right_shore[1] == GOAT && 
-           game_state.right_shore[2] == CABBAGE;
-}
-
-int check_loss() {
+int check_game_over() {
+    // Check left shore
     if (game_state.boat_position == 1) {
-        if (game_state.left_shore[0] == WOLF && game_state.left_shore[1] == GOAT && game_state.left_shore[2] != CABBAGE) {
-            return ERROR_BAD_SITUATION;
+        int wolf_left = game_state.left_shore[0] == WOLF;
+        int goat_left = game_state.left_shore[1] == GOAT;
+        int cabbage_left = game_state.left_shore[2] == CABBAGE;
+        
+        if (wolf_left && goat_left) {
+            printf("Wolf ate goat on left shore!\n");
+            return 1;
         }
-        if (game_state.left_shore[1] == GOAT && game_state.left_shore[2] == CABBAGE && game_state.left_shore[0] != WOLF) {
-            return ERROR_BAD_SITUATION;
-        }
-    }
-    else {
-        if (game_state.right_shore[0] == WOLF && game_state.right_shore[1] == GOAT && game_state.right_shore[2] != CABBAGE) {
-            return ERROR_BAD_SITUATION;
-        }
-        if (game_state.right_shore[1] == GOAT && game_state.right_shore[2] == CABBAGE && game_state.right_shore[0] != WOLF) {
-            return ERROR_BAD_SITUATION;
+        if (goat_left && cabbage_left) {
+            printf("Goat ate cabbage on left shore!\n");
+            return 1;
         }
     }
-    return SUCCESS;
+    
+    // Check right shore
+    if (game_state.boat_position == 0) {
+        int wolf_right = game_state.right_shore[0] == WOLF;
+        int goat_right = game_state.right_shore[1] == GOAT;
+        int cabbage_right = game_state.right_shore[2] == CABBAGE;
+        
+        if (wolf_right && goat_right) {
+            printf("Wolf ate goat on right shore!\n");
+            return 1;
+        }
+        if (goat_right && cabbage_right) {
+            printf("Goat ate cabbage on right shore!\n");
+            return 1;
+        }
+    }
+    
+    // Check win condition
+    if (game_state.right_shore[0] == WOLF &&
+        game_state.right_shore[1] == GOAT &&
+        game_state.right_shore[2] == CABBAGE) {
+        printf("All objects are safely on the right shore! You win!\n");
+        return 2;
+    }
+    
+    return 0;
 }
 
-void update_game_state() {
-    if (check_victory()) {
-        game_state.game_over = 1;
-        game_state.success = 1;
-    } else if (check_loss()) {
-        game_state.game_over = 1;
-        game_state.success = 0;
-    }
+void print_state() {
+    printf("\nCurrent state:\n");
+    printf("Left shore: ");
+    if (game_state.left_shore[0] == WOLF) printf("wolf ");
+    if (game_state.left_shore[1] == GOAT) printf("goat ");
+    if (game_state.left_shore[2] == CABBAGE) printf("cabbage ");
+    
+    printf("\nRight shore: ");
+    if (game_state.right_shore[0] == WOLF) printf("wolf ");
+    if (game_state.right_shore[1] == GOAT) printf("goat ");
+    if (game_state.right_shore[2] == CABBAGE) printf("cabbage ");
+    
+    printf("\nBoat is on the %s shore. ", game_state.boat_position ? "right" : "left");
+    printf("Boat contains: ");
+    if (game_state.boat == WOLF) printf("wolf");
+    else if (game_state.boat == GOAT) printf("goat");
+    else if (game_state.boat == CABBAGE) printf("cabbage");
+    else printf("nothing");
+    printf("\n\n");
 }
 
 int process_command(int client_id, const char* command) {
     if (game_state.game_over) {
-        return ERROR_GAME_OVER;
+        return -1;
     }
-
+    
     char cmd[10];
     char obj[10];
-    int parsed = sscanf(command, "%s %s", cmd, obj);
+    int args = sscanf(command, "%s %s", cmd, obj);
     
-    if (strcmp(cmd, "take") == 0 && parsed == 2) {
-        Object object = NONE;
-        if (strcmp(obj, "wolf") == 0) object = WOLF;
-        else if (strcmp(obj, "goat") == 0) object = GOAT;
-        else if (strcmp(obj, "cabbage") == 0) object = CABBAGE;
-        else return ERROR_UNDEFINED_OBJECT;
+    if (args == 1 && strcmp(cmd, "put") == 0) {
+        if (game_state.boat == NONE) {
+            printf("Client %d: Boat is empty, nothing to put\n", client_id);
+            return 0;
+        }
         
-        if (game_state.boat != NONE) return ERROR_FULL_BOAT;
-        
-        Object* shore = game_state.boat_position ? game_state.right_shore : game_state.left_shore;
-        if (shore[object] != object) return ERROR_WRONG_SHORE;
-        
-        shore[object] = NONE;
-        game_state.boat = object;
-    }
-    else if (strcmp(cmd, "put") == 0 && parsed == 1) {
-        if (game_state.boat == NONE) return ERROR_NOTHING_TO_PUT;
-        
-        Object* shore = game_state.boat_position ? game_state.right_shore : game_state.left_shore;
-        shore[game_state.boat] = game_state.boat;
+        Object item = game_state.boat;
         game_state.boat = NONE;
+        
+        if (game_state.boat_position == 0) { // left shore
+            game_state.left_shore[item] = item;
+        } else { // right shore
+            game_state.right_shore[item] = item;
+        }
+
+        int result = check_game_over();                 //  MAYBE NEED TO REMOVE
+        if (result == 1) {
+            game_state.game_over = 1;
+            printf("Game over! You lost!\n");
+            return -1;
+        } else if (result == 2) {
+            game_state.game_over = 1;
+            printf("Game over! You won!\n");
+            return -1;
+        }
+        
+        printf("Client %d: Put %d on shore\n", client_id, item);
+        return 1;
     }
-    else if (strcmp(cmd, "move") == 0 && parsed == 1) {
+    else if (args == 2 && strcmp(cmd, "take") == 0) {
+        if (game_state.boat != NONE) {
+            printf("Client %d: Boat is already full\n", client_id);
+            return 0;
+        }
+        
+        Object item;
+        if (strcmp(obj, "wolf") == 0) item = WOLF;
+        else if (strcmp(obj, "goat") == 0) item = GOAT;
+        else if (strcmp(obj, "cabbage") == 0) item = CABBAGE;
+        else {
+            printf("Client %d: Unknown object '%s'\n", client_id, obj);
+            return 0;
+        }
+        
+        int* shore = game_state.boat_position ? game_state.right_shore : game_state.left_shore;
+        if (shore[item] != item) {
+            printf("Client %d: Object %d not on this shore\n", client_id, item);
+            return 0;
+        }
+        
+        shore[item] = NONE;
+        game_state.boat = item;
+        printf("Client %d: Took %d into boat\n", client_id, item);
+        return 1;
+    }
+    else if (args == 1 && strcmp(cmd, "move") == 0) {
         game_state.boat_position = !game_state.boat_position;
+        printf("Client %d: Moved boat to %s shore\n", client_id, 
+               game_state.boat_position ? "right" : "left");
+        
+        int result = check_game_over();
+        if (result == 1) {
+            game_state.game_over = 1;
+            printf("Game over! You lost!\n");
+            return -1;
+        } else if (result == 2) {
+            game_state.game_over = 1;
+            printf("Game over! You won!\n");
+            return -1;
+        }
+        
+        return 1;
     }
     else {
-        return ERROR_INVALID_COMMAND;
-    }
-    
-    update_game_state();
-    return SUCCESS;
-}
-
-void send_response(int client_id, const char* response) {
-    Message msg;
-    msg.mtype = client_id;
-    msg.client_id = client_id;
-    snprintf(msg.mtext, MAX_MSG_SIZE, "%s", response);
-    
-    if (msgsnd(server_msqid, &msg, sizeof(msg.mtext), 0) == -1) {
-        perror("msgsnd");
+        printf("Client %d: Unknown command '%s'\n", client_id, command);
+        return 0;
     }
 }
 
-void handle_client_message(Message* msg) {
-    int client_id = msg->client_id;
-    char response[MAX_MSG_SIZE];
-    
-    int result = process_command(client_id, msg->mtext);
-    
-    if (result == SUCCESS) {
-        if (game_state.game_over) {
-            if (game_state.success) {
-                snprintf(response, MAX_MSG_SIZE, "Success! All items are safely on the right shore.");
-            } else {
-                snprintf(response, MAX_MSG_SIZE, "Game over! Something was eaten.");
-            }
-        } else {
-            snprintf(response, MAX_MSG_SIZE, "Command executed. State: %s shore - wolf:%d goat:%d cabbage:%d | boat:%d | %s shore - wolf:%d goat:%d cabbage:%d",
-                     game_state.boat_position ? "left" : "right",
-                     game_state.left_shore[0] != NONE, game_state.left_shore[1] != NONE, game_state.left_shore[2] != NONE,
-                     game_state.boat != NONE,
-                     game_state.boat_position ? "right" : "left",
-                     game_state.right_shore[0] != NONE, game_state.right_shore[1] != NONE, game_state.right_shore[2] != NONE);
-        }
-    } else {
-        switch (result) {
-            case ERROR_GAME_OVER: strcpy(response, "Game is already over"); break;
-            case ERROR_UNDEFINED_OBJECT: strcpy(response, "Invalid object"); break;
-            case ERROR_FULL_BOAT: strcpy(response, "Boat is full"); break;
-            case ERROR_WRONG_SHORE: strcpy(response, "Object not on this shore"); break;
-            case ERROR_NOTHING_TO_PUT: strcpy(response, "Nothing to put"); break;
-            case ERROR_INVALID_COMMAND: strcpy(response, "Invalid command"); break;
-            default: strcpy(response, "Unknown error"); break;
-        }
-    }
-    
-    send_response(client_id, response);
-}
-
-void cleanup() {
-    msgctl(server_msqid, IPC_RMID, NULL);
-    printf("Server shutdown\n");
+void handle_signal(int sig) {
+    printf("\nServer shutting down...\n");
+    msgctl(msgqid, IPC_RMID, NULL);
     exit(0);
 }
 
 int main() {
-    signal(SIGINT, cleanup);
-    signal(SIGTERM, cleanup);
+    signal(SIGINT, handle_signal);
+    signal(SIGTERM, handle_signal);
     
-    server_key = ftok("server.c", 'A');
-    if (server_key == -1) {
+    key_t key = ftok("server.c", 'A');
+    if (key == -1) {
         perror("ftok");
         exit(1);
     }
     
-    server_msqid = msgget(server_key, IPC_CREAT | 0666);
-    if (server_msqid == -1) {
+    msgqid = msgget(key, PERMS | IPC_CREAT);
+    if (msgqid == -1) {
         perror("msgget");
         exit(1);
     }
     
+    printf("Server started with message queue id %d\n", msgqid);
+    
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        clients[i].client_id = -1;
+        clients[i].active = 0;
+    }
+    
     initialize_game();
-    printf("Server started. Waiting for messages...\n");
+    print_state();
     
     while (1) {
         Message msg;
-        if (msgrcv(server_msqid, &msg, sizeof(msg.mtext), 1, 0) == -1) {
+        if (msgrcv(msgqid, &msg, sizeof(msg.mtext) + sizeof(int), 0, 0) == -1) {
             perror("msgrcv");
             continue;
         }
         
-        int client_id = msg.client_id;
-        int client_exists = 0;
+        printf("Received message from client %d: %s\n", msg.client_id, msg.mtext);
         
-        for (int i = 0; i < num_clients; i++) {
-            if (clients[i].client_id == client_id) {
-                client_exists = 1;
-                clients[i].last_active = time(NULL);
-                break;
+        if (strcmp(msg.mtext, "register") == 0) {
+            int found = 0;
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (!clients[i].active) {
+                    clients[i].client_id = msg.client_id;
+                    clients[i].pid = msg.client_id; // Using client_id as PID for simplicity
+                    clients[i].active = 1;
+                    found = 1;
+                    
+                    Message reply;
+                    reply.mtype = msg.client_id;
+                    strcpy(reply.mtext, "registered");
+                    reply.client_id = 0;
+                    
+                    if (msgsnd(msgqid, &reply, sizeof(reply.mtext) + sizeof(int), 0) == -1) {
+                        perror("msgsnd");
+                    }
+                    
+                    printf("Registered new client with id %d\n", msg.client_id);
+                    break;
+                }
+            }
+            
+            if (!found) {
+                printf("Max clients reached, cannot register new client\n");
+            }
+        } else {
+            int result = process_command(msg.client_id, msg.mtext);
+            
+            Message reply;
+            reply.mtype = msg.client_id;
+            reply.client_id = 0;
+            
+            if (result == 1) {
+                strcpy(reply.mtext, "success");
+                print_state();
+            } else if (result == 0) {
+                strcpy(reply.mtext, "error");
+            } else if (result == -1) {
+                strcpy(reply.mtext, "game_over");
+            }
+            
+            if (msgsnd(msgqid, &reply, sizeof(reply.mtext) + sizeof(int), 0) == -1) {
+                perror("msgsnd");
             }
         }
-        
-        if (!client_exists && num_clients < MAX_CLIENTS) {
-            clients[num_clients].client_id = client_id;
-            clients[num_clients].last_active = time(NULL);
-            num_clients++;
-            printf("New client connected: %d\n", client_id);
-        }
-        
-        printf("Received from client %d: %s\n", client_id, msg.mtext);
-        handle_client_message(&msg);
     }
     
-    return SUCCESS;
-}
+    return 0;
+}   

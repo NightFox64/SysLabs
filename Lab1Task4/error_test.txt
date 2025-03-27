@@ -1,0 +1,11 @@
+take invalid
+take wolf
+take goat
+put
+move
+take goat
+move
+put
+take wolf
+move
+put

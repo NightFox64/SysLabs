@@ -1,0 +1,6 @@
+take goat
+move
+put
+take wolf
+move
+put
