@@ -12,7 +12,12 @@
 #define MAX_CLIENTS 10
 #define PERMS 0644
 
-typedef enum { WOLF, GOAT, CABBAGE, NONE } Object;
+typedef enum { 
+    WOLF, 
+    GOAT, 
+    CABBAGE, 
+    NONE 
+} Object;
 
 typedef struct {
     Object left_shore[3];  // wolf, goat, cabbage
@@ -51,7 +56,6 @@ void initialize_game() {
 }
 
 int check_game_over() {
-    // Check left shore
     if (game_state.boat_position == 1) {
         int wolf_left = game_state.left_shore[0] == WOLF;
         int goat_left = game_state.left_shore[1] == GOAT;
@@ -67,7 +71,6 @@ int check_game_over() {
         }
     }
     
-    // Check right shore
     if (game_state.boat_position == 0) {
         int wolf_right = game_state.right_shore[0] == WOLF;
         int goat_right = game_state.right_shore[1] == GOAT;
@@ -83,7 +86,6 @@ int check_game_over() {
         }
     }
     
-    // Check win condition
     if (game_state.right_shore[0] == WOLF &&
         game_state.right_shore[1] == GOAT &&
         game_state.right_shore[2] == CABBAGE) {
@@ -133,13 +135,13 @@ int process_command(int client_id, const char* command) {
         Object item = game_state.boat;
         game_state.boat = NONE;
         
-        if (game_state.boat_position == 0) { // left shore
+        if (game_state.boat_position == 0) {
             game_state.left_shore[item] = item;
-        } else { // right shore
+        } else {
             game_state.right_shore[item] = item;
         }
 
-        int result = check_game_over();                 //  MAYBE NEED TO REMOVE
+        int result = check_game_over();
         if (result == 1) {
             game_state.game_over = 1;
             printf("Game over! You lost!\n");
@@ -203,10 +205,11 @@ int process_command(int client_id, const char* command) {
     }
 }
 
-void handle_signal(int sig) {
+int handle_signal(int sig) {
     printf("\nServer shutting down...\n");
     msgctl(msgqid, IPC_RMID, NULL);
     exit(0);
+    //return 0;
 }
 
 int main() {
@@ -215,14 +218,18 @@ int main() {
     
     key_t key = ftok("server.c", 'A');
     if (key == -1) {
-        perror("ftok");
-        exit(1);
+        //perror("ftok");
+        //exit(1);
+        printf("ftok");
+        return 1;
     }
     
     msgqid = msgget(key, PERMS | IPC_CREAT);
     if (msgqid == -1) {
-        perror("msgget");
-        exit(1);
+        // perror("msgget");
+        // exit(1);
+        printf("msgget");
+        return 1;
     }
     
     printf("Server started with message queue id %d\n", msgqid);
@@ -238,7 +245,10 @@ int main() {
     while (1) {
         Message msg;
         if (msgrcv(msgqid, &msg, sizeof(msg.mtext) + sizeof(int), 0, 0) == -1) {
-            perror("msgrcv");
+            // perror("msgrcv");
+            // continue;
+            printf("msgrcv");
+            //return;
             continue;
         }
         
@@ -249,7 +259,7 @@ int main() {
             for (int i = 0; i < MAX_CLIENTS; i++) {
                 if (!clients[i].active) {
                     clients[i].client_id = msg.client_id;
-                    clients[i].pid = msg.client_id; // Using client_id as PID for simplicity
+                    clients[i].pid = msg.client_id;
                     clients[i].active = 1;
                     found = 1;
                     
@@ -259,7 +269,8 @@ int main() {
                     reply.client_id = 0;
                     
                     if (msgsnd(msgqid, &reply, sizeof(reply.mtext) + sizeof(int), 0) == -1) {
-                        perror("msgsnd");
+                        //perror("msgsnd");
+                        printf("msgsnd");
                     }
                     
                     printf("Registered new client with id %d\n", msg.client_id);
@@ -284,10 +295,12 @@ int main() {
                 strcpy(reply.mtext, "error");
             } else if (result == -1) {
                 strcpy(reply.mtext, "game_over");
+                //return;                             //not sure
             }
             
             if (msgsnd(msgqid, &reply, sizeof(reply.mtext) + sizeof(int), 0) == -1) {
-                perror("msgsnd");
+                //perror("msgsnd");
+                printf("msgsnd");
             }
         }
     }

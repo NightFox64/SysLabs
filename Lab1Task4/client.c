@@ -27,7 +27,7 @@ void handle_signal(int sig) {
 
 void send_command(const char* command) {
     Message msg;
-    msg.mtype = 1; // Server message type
+    msg.mtype = 1;
     strncpy(msg.mtext, command, MAX_MSG_SIZE);
     msg.client_id = client_id;
     
@@ -83,14 +83,13 @@ void process_file(const char* filename) {
     
     char line[MAX_MSG_SIZE];
     while (fgets(line, sizeof(line), file)) {
-        // Remove newline character
         line[strcspn(line, "\n")] = '\0';
         
         if (strlen(line) == 0) continue;
         
         printf("Sending command: %s\n", line);
         send_command(line);
-        sleep(1); // Small delay between commands
+        sleep(1);
     }
     
     fclose(file);
