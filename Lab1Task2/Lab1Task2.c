@@ -10,8 +10,6 @@
 #include <math.h>
 #include <linux/limits.h>
 
-//#define BUFSIZ 1024
-
 enum errors {
     SUCCESS = 0,
     ERROR_OPEN_FILE = -1,
@@ -28,17 +26,17 @@ int xorN(const char* filename, int N) {
         return ERROR_OPEN_FILE;
     }
 
-    size_t block_size = (1 << N) / 8;
-    if ((1 << N) % 8 != 0) {
-        block_size += 1;
-    }
+    size_t bits_requested = 1 << N;
+    size_t full_bytes = bits_requested / 8;
+    size_t remaining_bits = bits_requested % 8;
+    size_t total_bytes = full_bytes + (remaining_bits ? 1 : 0);
 
-    uint8_t* block = (uint8_t*)calloc(block_size, sizeof(uint8_t));
+    uint8_t* block = (uint8_t*)calloc(total_bytes, sizeof(uint8_t));
     if (block == NULL) {
         fclose(file);
         return ERROR_MALLOC;
     }
-    uint8_t* result = (uint8_t*)calloc(block_size, sizeof(uint8_t));
+    uint8_t* result = (uint8_t*)calloc(total_bytes, sizeof(uint8_t));
     if (result == NULL) {
         fclose(file);
         free(block);
@@ -46,19 +44,27 @@ int xorN(const char* filename, int N) {
     }
 
     size_t bytes_read;
-    while ((bytes_read = fread(block, sizeof(uint8_t), block_size, file)) > 0) {
-        if (bytes_read < block_size) {
-            memset(block + bytes_read, 0, block_size - bytes_read);
+    while ((bytes_read = fread(block, sizeof(uint8_t), total_bytes, file)) > 0) {
+        if (bytes_read < total_bytes) {
+            memset(block + bytes_read, 0, total_bytes - bytes_read);
         }
         
-        for (size_t i = 0; i < block_size; i++) {
+        for (size_t i = 0; i < full_bytes; i++) {
             result[i] ^= block[i];
+        }
+        
+        if (remaining_bits > 0 && bytes_read >= full_bytes) {
+            uint8_t mask = (1 << remaining_bits) - 1;
+            result[full_bytes] ^= (block[full_bytes] & mask);
         }
     }
 
-    printf("XOR result for file '%s' with N=%d:\n", filename, N);
-    for (size_t i = 0; i < block_size; i++) {
+    printf("XOR result for file '%s' with N=%d (%zu bits):\n", filename, N, bits_requested);
+    for (size_t i = 0; i < full_bytes; i++) {
         printf("%x ", result[i]);
+    }
+    if (remaining_bits > 0) {
+        printf("%x (only %zu bits)", result[full_bytes], remaining_bits);
     }
     printf("\n");
 
