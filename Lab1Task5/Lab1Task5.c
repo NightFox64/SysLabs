@@ -45,7 +45,7 @@ void woman_wants_to_enter() {
     }
     
     bathroom.count++;
-    printf("Женщина зашла. Сейчас в ванной: %d женщин\n", bathroom.count);
+    printf("Woman entered. Now in bathroom: %d women\n", bathroom.count);
     
     pthread_mutex_unlock(&bathroom.mutex);
 }
@@ -63,7 +63,7 @@ void man_wants_to_enter() {
     }
     
     bathroom.count++;
-    printf("Мужчина зашел. Сейчас в ванной: %d мужчин\n", bathroom.count);
+    printf("Man entered. Now in bathhroom: %d men\n", bathroom.count);
     
     pthread_mutex_unlock(&bathroom.mutex);
 }
@@ -72,7 +72,7 @@ void woman_leaves() {
     pthread_mutex_lock(&bathroom.mutex);
     
     bathroom.count--;
-    printf("Женщина вышла. Осталось в ванной: %d женщин\n", bathroom.count);
+    printf("Woman left. Remained in bathroom: %d women\n", bathroom.count);
     
     if (bathroom.count == 0) {
         bathroom.state = EMPTY;
@@ -86,7 +86,7 @@ void man_leaves() {
     pthread_mutex_lock(&bathroom.mutex);
     
     bathroom.count--;
-    printf("Мужчина вышел. Осталось в ванной: %d мужчин\n", bathroom.count);
+    printf("Mane left. Remained in bathroom: %d men\n", bathroom.count);
     
     if (bathroom.count == 0) {
         bathroom.state = EMPTY;
@@ -112,13 +112,13 @@ void* man_thread(void* arg) {
 
 int main(int argc, char* argv[]) {
     if (argc != 2) {
-        printf("Использование: %s <N>\n", argv[0]);
+        printf("Usage: %s <N>\n", argv[0]);
         return 1;
     }
     
     int N = atoi(argv[1]);
     if (N <= 0) {
-        printf("N должно быть положительным числом\n");
+        printf("N must be positive\n");
         return 1;
     }
     
