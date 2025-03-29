@@ -209,7 +209,6 @@ int handle_signal(int sig) {
     printf("\nServer shutting down...\n");
     msgctl(msgqid, IPC_RMID, NULL);
     exit(0);
-    //return 0;
 }
 
 int main() {
@@ -218,16 +217,12 @@ int main() {
     
     key_t key = ftok("server.c", 'A');
     if (key == -1) {
-        //perror("ftok");
-        //exit(1);
         printf("ftok");
         return 1;
     }
     
     msgqid = msgget(key, PERMS | IPC_CREAT);
     if (msgqid == -1) {
-        // perror("msgget");
-        // exit(1);
         printf("msgget");
         return 1;
     }
@@ -245,10 +240,7 @@ int main() {
     while (1) {
         Message msg;
         if (msgrcv(msgqid, &msg, sizeof(msg.mtext) + sizeof(int), 0, 0) == -1) {
-            // perror("msgrcv");
-            // continue;
             printf("msgrcv");
-            //return;
             continue;
         }
         
@@ -269,7 +261,6 @@ int main() {
                     reply.client_id = 0;
                     
                     if (msgsnd(msgqid, &reply, sizeof(reply.mtext) + sizeof(int), 0) == -1) {
-                        //perror("msgsnd");
                         printf("msgsnd");
                     }
                     
@@ -295,11 +286,10 @@ int main() {
                 strcpy(reply.mtext, "error");
             } else if (result == -1) {
                 strcpy(reply.mtext, "game_over");
-                //return;                             //not sure
+                initialize_game();
             }
             
             if (msgsnd(msgqid, &reply, sizeof(reply.mtext) + sizeof(int), 0) == -1) {
-                //perror("msgsnd");
                 printf("msgsnd");
             }
         }

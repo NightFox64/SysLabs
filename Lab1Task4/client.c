@@ -25,44 +25,53 @@ void handle_signal(int sig) {
     exit(0);
 }
 
-void send_command(const char* command) {
+int send_command(const char* command) {
     Message msg;
     msg.mtype = 1;
     strncpy(msg.mtext, command, MAX_MSG_SIZE);
     msg.client_id = client_id;
     
     if (msgsnd(msgqid, &msg, sizeof(msg.mtext) + sizeof(int), 0) == -1) {
-        perror("msgsnd");
-        exit(1);
+        // perror("msgsnd");
+        // exit(1);
+        printf("msgsnd");
+        return 1;
     }
     
     Message reply;
     if (msgrcv(msgqid, &reply, sizeof(reply.mtext) + sizeof(int), client_id, 0) == -1) {
-        perror("msgrcv");
-        exit(1);
+        // perror("msgrcv");
+        // exit(1);
+        printf("msgrcv");
+        return 1;
     }
     
     printf("Server reply: %s\n", reply.mtext);
     if (strcmp(reply.mtext, "game_over") == 0) {
-        exit(0);
+        //exit(0);
+        return 0;
     }
 }
 
-void register_client() {
+int register_client() {
     Message msg;
     msg.mtype = 1;
     strcpy(msg.mtext, "register");
     msg.client_id = getpid();
     
     if (msgsnd(msgqid, &msg, sizeof(msg.mtext) + sizeof(int), 0) == -1) {
-        perror("msgsnd");
-        exit(1);
+        // perror("msgsnd");
+        // exit(1);
+        printf("msgsnd");
+        return 1;
     }
     
     Message reply;
     if (msgrcv(msgqid, &reply, sizeof(reply.mtext) + sizeof(int), getpid(), 0) == -1) {
-        perror("msgrcv");
-        exit(1);
+        //perror("msgrcv");
+        //exit(1);
+        printf("msgrcv");
+        return 1;
     }
     
     if (strcmp(reply.mtext, "registered") == 0) {
@@ -70,15 +79,18 @@ void register_client() {
         printf("Registered with id %d\n", client_id);
     } else {
         printf("Registration failed\n");
-        exit(1);
+        //exit(1);
+        return 1;
     }
 }
 
-void process_file(const char* filename) {
+int process_file(const char* filename) {
     FILE* file = fopen(filename, "r");
     if (!file) {
-        perror("fopen");
-        exit(1);
+        // perror("fopen");
+        // exit(1);
+        printf("fopen");
+        return 1;
     }
     
     char line[MAX_MSG_SIZE];
@@ -88,7 +100,10 @@ void process_file(const char* filename) {
         if (strlen(line) == 0) continue;
         
         printf("Sending command: %s\n", line);
-        send_command(line);
+        if (!send_command(line)) {
+            fclose(file);
+            return 0;
+        }
         sleep(1);
     }
     
@@ -101,19 +116,24 @@ int main(int argc, char* argv[]) {
     
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <command_file>\n", argv[0]);
-        exit(1);
+        //exit(1);
+        return 1;
     }
     
     key_t key = ftok("server.c", 'A');
     if (key == -1) {
-        perror("ftok");
-        exit(1);
+        // perror("ftok");
+        // exit(1);
+        printf("ftok");
+        return 1;
     }
     
     msgqid = msgget(key, PERMS);
     if (msgqid == -1) {
-        perror("msgget");
-        exit(1);
+        // perror("msgget");
+        // exit(1);
+        printf("msgget");
+        return 1;
     }
     
     register_client();
