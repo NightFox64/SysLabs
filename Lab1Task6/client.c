@@ -1,36 +1,57 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
+#include <sys/types.h>
 #include <sys/stat.h>
-#include <linux/limits.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #define FIFO_SERVER "server_fifo"
 #define FIFO_CLIENT "client_fifo"
 
-int main() {
-    printf("Client started. Enter absolute file paths (one per line, empty line to finish):\n");
+int main(int argc, char *argv[]) {
+    int server_fd, client_fd;
+    char buffer[BUFSIZ];
+    char input[BUFSIZ];
 
-    char input[BUFSIZ] = {0};
-    char line[PATH_MAX];
-
-    while (1) {
-        fgets(line, PATH_MAX, stdin);
-        if (line[0] == '\n') break;
-        strcat(input, line);
+    if (argc < 2) {
+        printf("Usage: %s <absolute_path1> [absolute_path2 ...]\n", argv[0]);
+        return 1;
     }
 
-    int server_fd = open(FIFO_SERVER, O_WRONLY);
+    input[0] = '\0';
+    for (int i = 1; i < argc; i++) {
+        strncat(input, argv[i], BUFSIZ - strlen(input) - 1);
+        if (i != argc - 1) {
+            strncat(input, "\n", BUFSIZ - strlen(input) - 1);
+        }
+    }
+
+    server_fd = open(FIFO_SERVER, O_WRONLY);
+    if (server_fd == -1) {
+        printf("open server_fifo");
+        return 1;
+    }
+
     write(server_fd, input, strlen(input) + 1);
     close(server_fd);
 
-    int client_fd = open(FIFO_CLIENT, O_RDONLY);
-    char result[BUFSIZ * 10] = {0};
-    read(client_fd, result, BUFSIZ * 10);
-    close(client_fd);
+    client_fd = open(FIFO_CLIENT, O_RDONLY);
+    if (client_fd == -1) {
+        printf("open client_fifo");
+        return 1;
+    }
 
-    printf("\nServer response:\n%s\n", result);
+    ssize_t bytes_read = read(client_fd, buffer, BUFSIZ - 1);
+    if (bytes_read == -1) {
+        printf("read");
+        close(client_fd);
+        return 1;
+    }
+    buffer[bytes_read] = '\0';
+
+    printf("Server response:\n%s\n", buffer);
+    close(client_fd);
 
     return 0;
 }
