@@ -8,12 +8,11 @@
 
 #define FIFO_SERVER "server_fifo"
 #define FIFO_CLIENT "client_fifo"
-#define BUFFER_SIZE 4096
 
 int main() {
     printf("Client started. Enter absolute file paths (one per line, empty line to finish):\n");
 
-    char input[BUFFER_SIZE] = {0};
+    char input[BUFSIZ] = {0};
     char line[PATH_MAX];
 
     while (1) {
@@ -27,8 +26,8 @@ int main() {
     close(server_fd);
 
     int client_fd = open(FIFO_CLIENT, O_RDONLY);
-    char result[BUFFER_SIZE * 10] = {0};
-    read(client_fd, result, BUFFER_SIZE * 10);
+    char result[BUFSIZ * 10] = {0};
+    read(client_fd, result, BUFSIZ * 10);
     close(client_fd);
 
     printf("\nServer response:\n%s\n", result);
