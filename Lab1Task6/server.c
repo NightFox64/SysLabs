@@ -10,12 +10,12 @@
 
 #define FIFO_SERVER "server_fifo"
 #define FIFO_CLIENT "client_fifo"
-#define BUFFER_SIZE 4096
+//#define BUFFER_SIZE 4096
 #define DT_REG 8
 
 typedef struct {
     char dir[PATH_MAX];
-    char files[BUFFER_SIZE];
+    char files[BUFSIZ];
 } DirEntry;
 
 int is_directory(const char *path) {
@@ -104,12 +104,12 @@ int main() {
     int server_fd = open(FIFO_SERVER, O_RDONLY);
     int client_fd = open(FIFO_CLIENT, O_WRONLY);
 
-    char buffer[BUFFER_SIZE];
-    read(server_fd, buffer, BUFFER_SIZE);
+    char buffer[BUFSIZ];
+    read(server_fd, buffer, BUFSIZ);
 
     printf("Received paths:\n%s\n", buffer);
 
-    char result[BUFFER_SIZE * 10] = {0};
+    char result[BUFSIZ * 10] = {0};
     process_paths(buffer, result);
 
     write(client_fd, result, strlen(result) + 1);
